@@ -1,0 +1,668 @@
+{
+  "name": "testing pre-test: advanced translations",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "pretest/advanced-translations",
+        "httpMethod": "POST",
+        "responseMode": "lastNode",
+        "options": {
+          "responseData": "{\"ok\":true}"
+        }
+      },
+      "id": "1",
+      "name": "N1 — Trigger (Webhook or Execute Workflow)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1180,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "add",
+        "fields": {
+          "values": [
+            {
+              "name": "signer_email",
+              "value": "={{$json.signer_email}}"
+            },
+            {
+              "name": "userLocale",
+              "value": "={{$json.userLocale}}"
+            },
+            {
+              "name": "userLocales",
+              "value": "={{$json.userLocales}}"
+            },
+            {
+              "name": "legalLang",
+              "value": "={{$json.legalLang}}"
+            },
+            {
+              "name": "mandate_pdf_url",
+              "value": "={{$json.mandate_pdf_url}}"
+            },
+            {
+              "name": "audit_log_url",
+              "value": "={{$json.audit_log_url}}"
+            }
+          ]
+        }
+      },
+      "id": "2",
+      "name": "N2 — Set: Normalize inputs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Inputs: signer_email, userLocale, userLocales, legalLang, mandate_pdf_url, audit_log_url\nfunction baseLangFromLocale(s) {\n  if (!s) return '';\n  s = String(s).trim().toLowerCase();\n  s = s.replace(/[^a-z,-]/g, '');          // keep letters/','/'-'\n  const first = s.split(',')[0] || '';\n  return (first.split('-')[0] || '').trim(); }\nfunction baseLangFromLegal(s) {\n  if (!s) return '';\n  s = String(s).trim().toLowerCase();\n  s = s.replace(/\\d{4}-\\d{2}-\\d{2}.*$/, ''); // drop date tail\n  s = s.replace(/[-\\s]+$/, '');\n  const m = s.match(/^[a-z]{2,3}/);\n  return m ? m[0] : ''; }\nlet XX = baseLangFromLocale($json.userLocale) || baseLangFromLocale($json.userLocales) || 'en'; if (!XX) XX = 'en';\nconst XYraw = $json.legalLang; let XY = baseLangFromLegal(XYraw) || XX || 'en';\nconst wantXX = XX !== 'en'; const wantXY = XY !== 'en' && XY !== XX;\n// Build manifest for end-user attachments\nconst manifest = [\n  // From DocuSeal\n  { key: 'Mandate_Signed.pdf', src: 'url',   url: $json.mandate_pdf_url },\n  { key: 'Audit_Log.pdf',      src: 'url',   url: $json.audit_log_url }, // may be empty\n  // Baseline EN (Drive folder A)\n  { key: 'Terms_EN.pdf',       src: 'driveA', name: 'terms_en.pdf' },\n  { key: 'Privacy_EN.pdf',     src: 'driveA', name: 'privacy_en.pdf' },\n];\nif (wantXX) {\n  manifest.push(\n    { key: `Terms_${XX.toUpperCase()}.pdf`,   src: 'driveA', name: `terms_${XX}.pdf` },\n    { key: `Privacy_${XX.toUpperCase()}.pdf`, src: 'driveA', name: `privacy_${XX}.pdf` },\n  ); }\nif (wantXY) {\n  manifest.push(\n    { key: `Terms_${XY.toUpperCase()}.pdf`,   src: 'driveA', name: `terms_${XY}.pdf` },\n    { key: `Privacy_${XY.toUpperCase()}.pdf`, src: 'driveA', name: `privacy_${XY}.pdf` },\n  ); }\nreturn [{ json: { ...$json, XX, XY, manifest } }];"
+      },
+      "id": "3",
+      "name": "N3 — Function: Derive XX/XY & build manifest",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -740,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1nBzr7eQx3ocYJLj9aLDglyV0aR8jN4JCX28ohHOaU7o",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Datajoy user ID",
+              "lookupValue": "={{ $node[\"N1 — Trigger (Webhook or Execute Workflow)\"].json.body.data.submitters[0].external_id || '36cec89c-a408-4b31-81d1-be0cefadaff8' }}"
+            },
+            {
+              "lookupColumn": "Phone number verified",
+              "lookupValue": "={{ '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4",
+      "name": "N4 — Google Sheets: Get row(s) in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -540,
+        -40
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": "<<<GOOGLE_SHEETS_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "319946f8-1276-4fbe-9f3d-eb59de61124f",
+              "leftValue": "={{ $json['Datajoy user ID'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5",
+      "name": "N5 — If row found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -320,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1nBzr7eQx3ocYJLj9aLDglyV0aR8jN4JCX28ohHOaU7o",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Datajoy user ID": "={{ $json['Datajoy user ID'] }}",
+            "Phone number verified": "={{ $node[\"N1 — Trigger (Webhook or Execute Workflow)\"].item.json.body.data.submitters[0].phone }}",
+            "Mandate signed": "={{ $node[\"N1 — Trigger (Webhook or Execute Workflow)\"].item.json.body.data.documents[0].url }}"
+          },
+          "matchingColumns": [
+            "Datajoy user ID"
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "6",
+      "name": "N6 — Update Data Joy Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -120,
+        -40
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": "<<<GOOGLE_SHEETS_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "list",
+        "useId": true,
+        "filters": {
+          "folderId": "<<<DRIVE_FOLDER_A_ID>>>"
+        },
+        "options": {
+          "returnAll": true
+        }
+      },
+      "id": "7",
+      "name": "N7 — Google Drive (List Folder A: “To be sent to end user”)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        280
+      ],
+      "credentials": {
+        "googleApi": "<<<GDRIVE_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const files = items.map(i => i.json); const byName = new Map(files.map(f => [String(f.name).toLowerCase(), f.id]));\n\nconst manifest = $items(0,0)[0].json.manifest; const resolved = []; const missing = [];\n\nfor (const m of manifest) {\n  if (m.src !== 'driveA') continue;\n  const id = byName.get(m.name.toLowerCase());\n  if (id) resolved.push({ key: m.key, fileId: id, name: m.name });\n  else missing.push(m.name); }\n// (Optional) You can store missing list in execution data if you want to log later.\nreturn resolved.length ? resolved.map(r => ({ json: r })) : [{ json: {} }];"
+      },
+      "id": "8",
+      "name": "N8 — Function: Resolve Drive A IDs for manifest",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -280,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{$json.fileId}}",
+        "options": {
+          "binaryPropertyName": "={{$json.key}}",
+          "fileName": "={{$json.key}}"
+        }
+      },
+      "id": "9",
+      "name": "N9 — Google Drive (Download from Folder A)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -40,
+        280
+      ],
+      "credentials": {
+        "googleApi": "<<<GDRIVE_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $items(0,0)[0].json.mandate_pdf_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "Mandate_Signed.pdf"
+            }
+          },
+          "retry": {
+            "maxAttempts": 3,
+            "retryAll": false
+          }
+        }
+      },
+      "id": "10",
+      "name": "N10 — HTTP Request: Download Mandate (URL → File)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -200,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $items(0,0)[0].json.audit_log_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "Audit_Log.pdf"
+            }
+          }
+        }
+      },
+      "id": "11",
+      "name": "N11 — HTTP Request: Download Audit (optional)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        520
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "functionCode": "const out = { json: $items(0,0)[0].json, binary: {} };\n// Drive A downloads\nfor (const it of $items('N9 — Google Drive (Download from Folder A)')) {\n  if (it.binary) Object.assign(out.binary, it.binary); }\n// Mandate\nfor (const it of $items('N10 — HTTP Request: Download Mandate (URL → File)')) {\n  if (it.binary) Object.assign(out.binary, it.binary); }\n// Audit\nfor (const it of $items('N11 — HTTP Request: Download Audit (optional)')) {\n  if (it.binary) Object.assign(out.binary, it.binary); }\nreturn out;"
+      },
+      "id": "12",
+      "name": "N12 — Function: Assemble binaries (end-user package)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        220,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "unit": "minutes"
+        },
+        "timeToWait": 10
+      },
+      "id": "13",
+      "name": "N13 — Wait (10 minutes)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        440,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "hello@datajoy.eu",
+        "toEmail": "={{$json.email || $json.signer_email}}",
+        "subject": "Terms, privacy, mandate and audit logs",
+        "emailFormat": "text",
+        "text": "Hello,\n\nPlease find enclosed, the terms, privacy, mandate and audit logs.\nLet us know if you have any questions.\n\nKr,\nBernard Cornet\nFounder - Datajoy - +32497864248",
+        "options": {
+          "attachments": "={{Object.keys($binary || {}).join(',')}}"
+        }
+      },
+      "id": "14",
+      "name": "N14 — Email Send (to end user)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        660,
+        360
+      ],
+      "credentials": {
+        "smtp": "<<<SMTP_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const inp = $input.first(); const out = { json: inp.json, binary: {} }; if (inp.binary?.['Mandate_Signed.pdf']) {   out.binary['Mandate_Signed.pdf'] = { ...inp.binary['Mandate_Signed.pdf'] }; } return out;"
+      },
+      "id": "15",
+      "name": "N15 — Code: Keep only Mandate for internal forward",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "hello@datajoy.eu",
+        "toEmail": "mandate.to.be.sent@datajoy.eu",
+        "subject": "Mandate Signed (internal copy)",
+        "emailFormat": "text",
+        "text": "Signed mandate attached.",
+        "options": {
+          "attachments": "={{Object.keys($binary || {}).join(',')}}"
+        }
+      },
+      "id": "16",
+      "name": "N16 — Email Send (internal) — Mandate only",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        660,
+        160
+      ],
+      "credentials": {
+        "smtp": "<<<SMTP_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "list",
+        "useId": true,
+        "filters": {
+          "folderId": "<<<DRIVE_FOLDER_B_ID>>>"
+        },
+        "options": {
+          "returnAll": true
+        }
+      },
+      "id": "17",
+      "name": "N17 — Google Drive (List Folder B: “To be sent to data holder”)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        520
+      ],
+      "credentials": {
+        "googleApi": "<<<GDRIVE_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{$json.id}}",
+        "options": {
+          "binaryPropertyName": "={{$json.name}}",
+          "fileName": "={{$json.name}}"
+        }
+      },
+      "id": "18",
+      "name": "N18 — Google Drive (Download Folder B files)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -100,
+        520
+      ],
+      "credentials": {
+        "googleApi": "<<<GDRIVE_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "draft",
+        "additionalFields": {
+          "subject": "Placeholder 1",
+          "body": "Placeholder 2",
+          "attachments": "={{Object.keys($binary || {}).join(',')}}"
+        }
+      },
+      "id": "19",
+      "name": "N19 — Gmail (Draft → Create) — data-holder pack",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        120,
+        520
+      ],
+      "credentials": {
+        "gmailOAuth2": "<<<GMAIL_CREDENTIAL_NAME>>>"
+      }
+    }
+  ],
+  "connections": {
+    "N1 — Trigger (Webhook or Execute Workflow)": {
+      "main": [
+        [
+          {
+            "node": "N2 — Set: Normalize inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N2 — Set: Normalize inputs": {
+      "main": [
+        [
+          {
+            "node": "N3 — Function: Derive XX/XY & build manifest",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N4 — Google Sheets: Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N3 — Function: Derive XX/XY & build manifest": {
+      "main": [
+        [
+          {
+            "node": "N7 — Google Drive (List Folder A: “To be sent to end user”)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N10 — HTTP Request: Download Mandate (URL → File)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N11 — HTTP Request: Download Audit (optional)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N17 — Google Drive (List Folder B: “To be sent to data holder”)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N4 — Google Sheets: Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "N5 — If row found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N5 — If row found": {
+      "main": [
+        [
+          {
+            "node": "N6 — Update Data Joy Log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "N7 — Google Drive (List Folder A: “To be sent to end user”)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N6 — Update Data Joy Log": {
+      "main": [
+        [
+          {
+            "node": "N7 — Google Drive (List Folder A: “To be sent to end user”)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N7 — Google Drive (List Folder A: “To be sent to end user”)": {
+      "main": [
+        [
+          {
+            "node": "N8 — Function: Resolve Drive A IDs for manifest",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N17 — Google Drive (List Folder B: “To be sent to data holder”)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N8 — Function: Resolve Drive A IDs for manifest": {
+      "main": [
+        [
+          {
+            "node": "N9 — Google Drive (Download from Folder A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N9 — Google Drive (Download from Folder A)": {
+      "main": [
+        [
+          {
+            "node": "N12 — Function: Assemble binaries (end-user package)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N10 — HTTP Request: Download Mandate (URL → File)": {
+      "main": [
+        [
+          {
+            "node": "N12 — Function: Assemble binaries (end-user package)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N11 — HTTP Request: Download Audit (optional)": {
+      "main": [
+        [
+          {
+            "node": "N12 — Function: Assemble binaries (end-user package)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N12 — Function: Assemble binaries (end-user package)": {
+      "main": [
+        [
+          {
+            "node": "N13 — Wait (10 minutes)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N15 — Code: Keep only Mandate for internal forward",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N13 — Wait (10 minutes)": {
+      "main": [
+        [
+          {
+            "node": "N14 — Email Send (to end user)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N15 — Code: Keep only Mandate for internal forward": {
+      "main": [
+        [
+          {
+            "node": "N16 — Email Send (internal) — Mandate only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N17 — Google Drive (List Folder B: “To be sent to data holder”)": {
+      "main": [
+        [
+          {
+            "node": "N18 — Google Drive (Download Folder B files)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N18 — Google Drive (Download Folder B files)": {
+      "main": [
+        [
+          {
+            "node": "N19 — Gmail (Draft → Create) — data-holder pack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "2"
+}
