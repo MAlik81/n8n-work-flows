@@ -1,0 +1,498 @@
+{
+  "name": "testing pre-test: advanced translations",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "pretest/advanced-translations",
+        "httpMethod": "POST",
+        "responseMode": "lastNode",
+        "options": {
+          "responseData": "{\"ok\":true}"
+        }
+      },
+      "id": "1",
+      "name": "N1 — Trigger (Webhook or Execute Workflow)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -860,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "add",
+        "fields": {
+          "values": [
+            {
+              "name": "signer_email",
+              "value": "={{$json.signer_email}}"
+            },
+            {
+              "name": "userLocale",
+              "value": "={{$json.userLocale}}"
+            },
+            {
+              "name": "userLocales",
+              "value": "={{$json.userLocales}}"
+            },
+            {
+              "name": "legalLang",
+              "value": "={{$json.legalLang}}"
+            },
+            {
+              "name": "mandate_pdf_url",
+              "value": "={{$json.mandate_pdf_url}}"
+            },
+            {
+              "name": "audit_log_url",
+              "value": "={{$json.audit_log_url}}"
+            }
+          ]
+        }
+      },
+      "id": "2",
+      "name": "N2 — Set: Normalize inputs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Inputs: signer_email, userLocale, userLocales, legalLang, mandate_pdf_url, audit_log_url\nfunction baseLangFromLocale(s) {\n  if (!s) return '';\n  s = String(s).trim().toLowerCase();\n  s = s.replace(/[^a-z,-]/g, '');          // keep letters/','/'-'\n  const first = s.split(',')[0] || '';\n  return (first.split('-')[0] || '').trim(); }\nfunction baseLangFromLegal(s) {\n  if (!s) return '';\n  s = String(s).trim().toLowerCase();\n  s = s.replace(/\\d{4}-\\d{2}-\\d{2}.*$/, ''); // drop date tail\n  s = s.replace(/[-\\s]+$/, '');\n  const m = s.match(/^[a-z]{2,3}/);\n  return m ? m[0] : ''; }\nlet XX = baseLangFromLocale($json.userLocale) || baseLangFromLocale($json.userLocales) || 'en'; if (!XX) XX = 'en';\nconst XYraw = $json.legalLang; let XY = baseLangFromLegal(XYraw) || XX || 'en';\nconst wantXX = XX !== 'en'; const wantXY = XY !== 'en' && XY !== XX;\n// Build manifest for end-user attachments\nconst manifest = [\n  // From DocuSeal\n  { key: 'Mandate_Signed.pdf', src: 'url',   url: $json.mandate_pdf_url },\n  { key: 'Audit_Log.pdf',      src: 'url',   url: $json.audit_log_url }, // may be empty\n  // Baseline EN (Drive folder A)\n  { key: 'Terms_EN.pdf',       src: 'driveA', name: 'terms_en.pdf' },\n  { key: 'Privacy_EN.pdf',     src: 'driveA', name: 'privacy_en.pdf' },\n];\nif (wantXX) {\n  manifest.push(\n    { key: `Terms_${XX.toUpperCase()}.pdf`,   src: 'driveA', name: `terms_${XX}.pdf` },\n    { key: `Privacy_${XX.toUpperCase()}.pdf`, src: 'driveA', name: `privacy_${XX}.pdf` },\n  ); }\nif (wantXY) {\n  manifest.push(\n    { key: `Terms_${XY.toUpperCase()}.pdf`,   src: 'driveA', name: `terms_${XY}.pdf` },\n    { key: `Privacy_${XY.toUpperCase()}.pdf`, src: 'driveA', name: `privacy_${XY}.pdf` },\n  ); }\nreturn [{ json: { ...$json, XX, XY, manifest } }];"
+      },
+      "id": "3",
+      "name": "N3 — Function: Derive XX/XY & build manifest",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "list",
+        "useId": true,
+        "filters": {
+          "folderId": "<<<DRIVE_FOLDER_A_ID>>>"
+        },
+        "options": {
+          "returnAll": true
+        }
+      },
+      "id": "4",
+      "name": "N4 — Google Drive (List Folder A: “To be sent to end user”)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        100
+      ],
+      "credentials": {
+        "googleApi": "<<<GDRIVE_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const files = items.map(i => i.json); const byName = new Map(files.map(f => [String(f.name).toLowerCase(), f.id]));\n\nconst manifest = $items(0,0)[0].json.manifest; const resolved = []; const missing = [];\n\nfor (const m of manifest) {\n  if (m.src !== 'driveA') continue;\n  const id = byName.get(m.name.toLowerCase());\n  if (id) resolved.push({ key: m.key, fileId: id, name: m.name });\n  else missing.push(m.name); }\n// (Optional) You can store missing list in execution data if you want to log later.\nreturn resolved.length ? resolved.map(r => ({ json: r })) : [{ json: {} }];"
+      },
+      "id": "5",
+      "name": "N5 — Function: Resolve Drive A IDs for manifest",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        20,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": "={{$json.fileId}}",
+        "options": {
+          "binaryPropertyName": "={{$json.key}}",
+          "fileName": "={{$json.key}}"
+        }
+      },
+      "id": "6",
+      "name": "N6 — Google Drive (Download from Folder A)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        240,
+        100
+      ],
+      "credentials": {
+        "googleApi": "<<<GDRIVE_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$items(0,0)[0].json.mandate_pdf_url}}",
+        "responseFormat": "file",
+        "options": {
+          "binaryPropertyName": "Mandate_Signed.pdf",
+          "retryOnFail": true,
+          "maxRetries": 3,
+          "retryWait": 2000,
+          "fullResponse": false
+        }
+      },
+      "id": "7",
+      "name": "N7 — HTTP Request: Download Mandate (URL → File)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -200,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$items(0,0)[0].json.audit_log_url}}",
+        "responseFormat": "file",
+        "options": {
+          "binaryPropertyName": "Audit_Log.pdf"
+        }
+      },
+      "id": "8",
+      "name": "N8 — HTTP Request: Download Audit (optional)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -20,
+        520
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const out = { json: $items(0,0)[0].json, binary: {} };\n// Drive A downloads\nfor (const it of $items('N6 — Google Drive (Download from Folder A)')) {\n  if (it.binary) Object.assign(out.binary, it.binary); }\n// Mandate\nfor (const it of $items('N7 — HTTP Request: Download Mandate (URL → File)')) {\n  if (it.binary) Object.assign(out.binary, it.binary); }\n// Audit\nfor (const it of $items('N8 — HTTP Request: Download Audit (optional)')) {\n  if (it.binary) Object.assign(out.binary, it.binary); }\nreturn out;"
+      },
+      "id": "9",
+      "name": "N9 — Function: Assemble binaries (end-user package)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "time",
+        "value": 10,
+        "unit": "minutes"
+      },
+      "id": "10",
+      "name": "N10 — Wait (10 minutes)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "",
+        "toEmail": "={{$json.email || $json.signer_email}}",
+        "subject": "Terms, privacy, mandate and audit logs",
+        "content": "Hello,\n\nPlease find enclosed, the terms, privacy, mandate and audit logs.\n\nLet us know if you have any questions.\n\nKr,\nBernard Cornet\nFounder - Datajoy - +32497864248",
+        "options": {
+          "attachments": "={{Object.keys($binary || {}).join(',')}}"
+        }
+      },
+      "id": "11",
+      "name": "N11 — Email Send (to end user)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        920,
+        200
+      ],
+      "credentials": {
+        "smtp": "<<<SMTP_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "language": "javascript",
+        "code": "const inp = $input.first(); const out = { json: inp.json, binary: {} }; if (inp.binary?.['Mandate_Signed.pdf']) {\n  out.binary['Mandate_Signed.pdf'] = { ...inp.binary['Mandate_Signed.pdf'] }; } return out;"
+      },
+      "id": "12",
+      "name": "N12 — Code: Keep only Mandate for internal forward",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        700,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "",
+        "toEmail": "mandate.to.be.sent@datajoy.eu",
+        "subject": "Mandate Signed (internal copy)",
+        "content": "Signed mandate attached.",
+        "options": {
+          "attachments": "={{Object.keys($binary || {}).join(',')}}"
+        }
+      },
+      "id": "13",
+      "name": "N13 — Email Send (internal) — Mandate only",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        920,
+        -20
+      ],
+      "credentials": {
+        "smtp": "<<<SMTP_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "list",
+        "useId": true,
+        "filters": {
+          "folderId": "<<<DRIVE_FOLDER_B_ID>>>"
+        },
+        "options": {
+          "returnAll": true
+        }
+      },
+      "id": "14",
+      "name": "N14 — Google Drive (List Folder B: “To be sent to data holder”)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        -160
+      ],
+      "credentials": {
+        "googleApi": "<<<GDRIVE_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": "={{$json.id}}",
+        "options": {
+          "binaryPropertyName": "={{$json.name}}",
+          "fileName": "={{$json.name}}"
+        }
+      },
+      "id": "15",
+      "name": "N15 — Google Drive (Download Folder B files)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        200,
+        -160
+      ],
+      "credentials": {
+        "googleApi": "<<<GDRIVE_CREDENTIAL_NAME>>>"
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "additionalFields": {
+          "subject": "Placeholder 1",
+          "body": "Placeholder 2",
+          "attachments": "={{Object.keys($binary || {}).join(',')}}",
+          "toList": ""
+        }
+      },
+      "id": "16",
+      "name": "N16 — Gmail (Draft → Create) — data-holder pack",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        420,
+        -160
+      ],
+      "credentials": {
+        "gmailOAuth2": "<<<GMAIL_CREDENTIAL_NAME>>>"
+      }
+    }
+  ],
+  "connections": {
+    "N1 — Trigger (Webhook or Execute Workflow)": {
+      "main": [
+        [
+          {
+            "node": "N2 — Set: Normalize inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N2 — Set: Normalize inputs": {
+      "main": [
+        [
+          {
+            "node": "N3 — Function: Derive XX/XY & build manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N3 — Function: Derive XX/XY & build manifest": {
+      "main": [
+        [
+          {
+            "node": "N4 — Google Drive (List Folder A: “To be sent to end user”)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N7 — HTTP Request: Download Mandate (URL → File)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N8 — HTTP Request: Download Audit (optional)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N4 — Google Drive (List Folder A: “To be sent to end user”)": {
+      "main": [
+        [
+          {
+            "node": "N5 — Function: Resolve Drive A IDs for manifest",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N14 — Google Drive (List Folder B: “To be sent to data holder”)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N5 — Function: Resolve Drive A IDs for manifest": {
+      "main": [
+        [
+          {
+            "node": "N6 — Google Drive (Download from Folder A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N6 — Google Drive (Download from Folder A)": {
+      "main": [
+        [
+          {
+            "node": "N9 — Function: Assemble binaries (end-user package)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N7 — HTTP Request: Download Mandate (URL → File)": {
+      "main": [
+        [
+          {
+            "node": "N9 — Function: Assemble binaries (end-user package)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N8 — HTTP Request: Download Audit (optional)": {
+      "main": [
+        [
+          {
+            "node": "N9 — Function: Assemble binaries (end-user package)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N9 — Function: Assemble binaries (end-user package)": {
+      "main": [
+        [
+          {
+            "node": "N10 — Wait (10 minutes)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "N12 — Code: Keep only Mandate for internal forward",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N10 — Wait (10 minutes)": {
+      "main": [
+        [
+          {
+            "node": "N11 — Email Send (to end user)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N12 — Code: Keep only Mandate for internal forward": {
+      "main": [
+        [
+          {
+            "node": "N13 — Email Send (internal) — Mandate only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N14 — Google Drive (List Folder B: “To be sent to data holder”)": {
+      "main": [
+        [
+          {
+            "node": "N15 — Google Drive (Download Folder B files)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "N15 — Google Drive (Download Folder B files)": {
+      "main": [
+        [
+          {
+            "node": "N16 — Gmail (Draft → Create) — data-holder pack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "1"
+}
